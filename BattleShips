@@ -1,0 +1,530 @@
+#include <LiquidCrystal.h> //Add the library for the lcd display
+#include <Servo.h>         //Add the library for the servo control
+#include <Keypad.h>        //Add the library for the keypad interface
+#define HEADER   '~'       //Define the header for all serial communications
+#define MAX_BYTES 2        //Define the amount of bytes to read from the buffer
+Servo Xaxis;               //Name 2 servos
+Servo Yaxis;              
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);   //Define the lcd pins
+const byte ROWS = 4; //four rows         //Set the amount of Rows and Cols on the keypad
+const byte COLS = 3; //three columns
+char keys[ROWS][COLS] = {
+  {1, 2, 3},
+  {4, 5, 6},
+  {7, 8, 9},                             //Set the characters for the keypad keys
+  {'*', 0, '#'}};
+byte rowPins[ROWS] = {41, 31, 33, 37}; //2, 7, 6, 4     //Set the pins for the keypad rows
+byte colPins[COLS] = {39, 43, 35}; //3, 1, 5            //Set the pins for the keypad cols
+Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );    //Map the keypad to pins
+const int buttonPin = 6;          //Set a pin for the button
+const int ledPin =  45;           //Set a pin for the button led
+int buttonState;                  //Create a variable to store the button position
+int shipsplaced, aircraft1, battleship1, submarine1, destroyer1, patrol1 = 0;    //Create a variable to store the ship placement confirmations
+int ship[100];                                                                   //Create the array to store the entire grid and ships
+int Xpos[100] = {
+  104, 102, 97, 94, 91, 88, 85, 82, 78, 76,
+  105, 103, 101, 97, 94, 91, 88, 85, 81, 76, 
+  105, 99, 97, 95, 91, 88, 85, 81, 78, 75,
+  106, 103, 100, 97, 94, 90, 87, 84, 79, 75,                                     //Set the positions for the X servo relative to the grid
+  106, 100, 97, 94, 91, 88, 85, 82, 78, 74, 
+  106, 104, 101, 98, 94, 91, 87, 84, 78, 74, 
+  106, 101, 98, 97, 92, 88, 85, 81, 78, 75, 
+  107, 104, 101, 97, 94, 91, 86, 83, 79, 75, 
+  107, 102, 99, 95, 92, 88, 85, 81, 78, 75, 
+  107, 104, 101, 98, 93, 90, 87, 83, 79, 75};
+int Ypos[100] = {
+  115, 116, 115, 115, 116, 116, 116, 116, 116, 116, 
+  114, 114, 114, 114, 114, 114, 114, 115, 115, 115, 
+  111, 111, 111, 111, 111, 112, 112, 112, 112, 113, 
+  109, 109, 109, 109, 109, 109, 109, 109, 110, 110,
+  106, 106, 106, 106, 106, 106, 106, 106, 106, 106,                              //Set the positions for the Y servo relative to the grid
+  103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 
+  99, 99, 99, 99, 99, 99, 99, 100, 100, 100,
+  96, 96, 96, 96, 96, 96, 97, 97, 97, 96, 
+  92, 92, 92, 92, 92, 92, 93, 93, 93, 93, 
+  88, 89, 89, 89, 89, 89, 89, 89, 89, 89};
+    
+int coord1, coord2, finalcoord;            //Create variables to store keypad inputs
+int received;                              //Create variable to check if a game search has been received
+int checkcoord;                            //Create a variable to check recieved coordinates against the ship array
+int hits = 0;                              //Count the amount of hits you have had
+int losses = 0;                            //Count the amount of times you have been hit
+byte searched;                             //Create variable to check if a game search has been sent
+char x;                                    //Create a character that will store the sent and received ASCII character
+void phrase(char data);                    //Create the phrase function
+void sendChar(char data);                  //Create the sendChar function
+
+void setup() {
+  Xaxis.attach(52);                        //Attach Servo X to pin 52
+  Yaxis.attach(53);                        //Attach Servo Y to pin 53
+  Serial3.begin(57600);                    //Initiate the Serial at 57600 baud
+  lcd.begin(16, 2);                        //Initiate the lcd with 16 characters across with 2 rows
+  pinMode(ledPin, OUTPUT);                 //Make the button LED an Output
+  pinMode(buttonPin, INPUT_PULLUP);        //Make the putton pin a Pullup Input
+  lcd.setCursor(0, 0);                     //Set the lcd cursor to beginning
+  lcd.print("Battle Ships");               //Print text to lcd
+  Xaxis.write(Xpos[00]);                    
+  Yaxis.write(Ypos[00]);
+  delay(750);
+  Xaxis.write(Xpos[9]);
+  Yaxis.write(Ypos[9]);
+  delay(750);
+  Xaxis.write(Xpos[99]);                    //Make the laser point to the 4 corners of the grid
+  Yaxis.write(Ypos[99]);
+  delay(750);
+  Xaxis.write(Xpos[90]);
+  Yaxis.write(Ypos[90]);
+  delay(750);
+  Xaxis.write(Xpos[94]);
+  Yaxis.write(Ypos[94]);                    //Set the laser on grid coordinate 94
+  delay(750);
+  for (int positionCounter = 0; positionCounter < 16; positionCounter++) {
+      lcd.scrollDisplayRight();}
+  for (int positionCounter = 0; positionCounter < 29; positionCounter++) {    //Scroll the lcd text across the screen
+      lcd.scrollDisplayLeft();
+      delay(200);
+  }
+}
+  
+void loop() {
+  if (shipsplaced == 0){                  //Check if ships have been placed already
+      lcd.clear();                        //Clear the lcd
+      lcd.setCursor(0, 0);                //Set lcd cursor to beginning
+      lcd.print(" Ship Placement");       //Print text to lcd
+      delay(2000);                        
+      lcd.clear();                        //Clear lcd
+      if (aircraft1 == 0){                //Check if Aircraft carrier has been placed
+        aircraft();}                      //If not, run the Aircraft function
+      if (battleship1 == 0){              //Check if Battleship has been placed
+        battleship();}                    //If not, run the Battleship function
+      if (submarine1 == 0){               //Check if Submarine has been placed
+        submarine();}                     //If not, run the Submarine function
+      if (destroyer1 == 0){               //Check if the Destroyer has been placed
+        destroyer();}                     //If not, run the Destroyer function
+      if (patrol1 == 0){                  //Check if the Patrol has been placed
+        patrol();}                        //If not, run the Patrol funcion
+      lcd.clear();                        //Clear the lcd
+      lcd.setCursor(0, 0);                //Set cursor to the beginning
+      lcd.print("Coordinates");           //Print text to the lcd
+      lcd.setCursor(0, 1);                //Set cursor to the start of the second row
+      lcd.print("obtained");              //Print text to the lcd
+      shipsplaced = 1;}                   //Ships have been placed  
+   
+   while (searched == 0){                      //Check if you have already searched for a game
+     Serial3.write(HEADER);                    
+     Serial3.write(102);                       //Send a search for a game
+     searched =1;                              //Search has been sent once
+     delay(100);      
+     if (Serial3.available() == MAX_BYTES) {   //If there are 2 bytes received in the buffer
+       char head = Serial3.read();             //Read the character
+       x = Serial3.read();                     //Set x to the character received
+     if (head == HEADER) {                     //If the header is correct
+         phrase(x);}                           //Run phrase function
+     }
+   }   
+   while (Serial3.available() > 0)             //If there are still bytes in the buffer
+       Serial3.read();                         //Clear them out
+       delay(20);}
+
+void aircraft(){                               //Aircraft placement function
+  lcd.clear();                                 //Clear the lcd
+  lcd.setCursor(0, 0);                         //Set the cursor to the beginning
+  lcd.print("Place Aircraft");                 //Print text to lcd
+  lcd.setCursor(0, 1);                         //Set the cursor to the start of the second row
+  lcd.print("Coordinate 1:   ");               //Print text to the lcd
+  lcd.setCursor(14, 1);                        //Set Cursor to the end position of the previous text
+  coord1 = keypad.waitForKey();                //Wait for key input and set variable to that value
+      lcd.print(coord1);                       //Print the input to the lcd
+  coord2 = keypad.waitForKey();                //Wait for key inpt and set variable to that value
+      lcd.print(coord2);                       //Print the input to the lcd
+  finalcoord = (coord1 * 10) + coord2;         //Combine the 2 variables to a single integer
+      Xaxis.write(Xpos[finalcoord]);           //Move the servos to the position
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;                        //Set the position in the array to a ship
+  lcd.setCursor(0, 1);                          
+  lcd.print("Coordinate 2:   ");               //Repeat for Second position of ship
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 3:   ");                //Repeat for Third position of ship
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 4:   ");                 //Repeat for Fourth position of ship
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 5:   ");                  //Repeat for Fifth position of ship
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  aircraft1 = 1;                                   //Aircraft positions have been set
+}
+  
+void battleship(){                                 //Repeat for the Battleship placement function
+  lcd.clear(); 
+  lcd.setCursor(0, 0);
+  lcd.print("Place Battleship");
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 1:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 2:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 3:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 4:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  battleship1 = 1;
+}
+  
+void submarine(){                                  //Repeat for the Submarine placement function
+  lcd.clear(); 
+  lcd.setCursor(0, 0);
+  lcd.print("Place Submarine");
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 1:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 2:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 3:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;  
+  submarine1 = 1;
+}
+  
+void destroyer(){                                  //Repeat for the destroyer placement function
+  lcd.clear(); 
+  lcd.setCursor(0, 0);
+  lcd.print("Place Destroyer");
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 1:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 2:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 3:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;  
+  destroyer1 = 1;
+}
+void patrol(){                                    //Repeat for the patrol placement function
+  lcd.clear(); 
+  lcd.setCursor(0, 0);
+  lcd.print("Place Patrol");
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 1:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Coordinate 2:   ");
+  lcd.setCursor(14, 1);
+  coord1 = keypad.waitForKey();
+      lcd.print(coord1);
+  coord2 = keypad.waitForKey();
+      lcd.print(coord2);
+  finalcoord = (coord1 * 10) + coord2;
+      lcd.print(finalcoord);
+      Xaxis.write(Xpos[finalcoord]);
+      Yaxis.write(Ypos[finalcoord]);
+  delay(1000);
+  ship[finalcoord] = 1;  
+  patrol1 = 1;  
+}
+
+void phrase(char data) {                //Begin the phrase function with respect to the data character
+  switch (data) {                       //Begin the switch case
+    case 100:  lcd.setCursor(0, 1);     //If the character received is ASCII 100 (Miss)
+      lcd.print("     Miss");           //Print text to the lcd
+      delay(2000);                      
+      received = 1;                     //We have received a valid command
+      break;                            //Break out of switch
+    case 101:  lcd.setCursor(0, 1);     //If the character received is ASCII 101 (Hit)
+      lcd.print("     Hit");            //Print text to the lcd
+      hits++;                           //Increase the amount of hits you have had
+      delay(2000);   
+      received = 1;                     //We have received a valid command
+      break;                            //Break out of switch
+    case 102:  Serial3.write(HEADER);   //If the character received is ASCII 102 (A search)
+      Serial3.write(103);               //Send back confirmation
+      player1();                        //Begin the player1 function
+      break;                            //Break out of switch
+    case 103:  player2();               //If the character received is ASCII 103 (Confirmation of a game)
+      break;                            //Begin player2 function
+    case 104:  lcd.setCursor(0, 1);     //If the character received is ASCII 104 (You have sent an invalid command)
+      lcd.print("  Undefined");         //Print text to the lcd
+      delay(2000);                      
+      received = 1;                     //We have received a valid command
+      receivecoord();                   //Return to receiving commands
+      break;                            //Break out of switch
+    default: {                          //Else
+        if (data > -1 && data < 100) {	//If the received character is ASCII 0-99 (Grid positions)		
+          Xaxis.write(Xpos[int(data)]); //Move the laser to the received grid coordinate
+          Yaxis.write(Ypos[int(data)]); 
+          lcd.setCursor(0, 1);          //Set lcd cursor to start of the second row
+          lcd.print(int(data));         //Print the received coordinate to the lcd
+          checkcoord = int(data);       //Set the grid checker to the received coordinate
+          received = 1;}                //We have received a valid command
+	else {  
+	  lcd.setCursor(0, 1);          //Set lcd cursor to start of the second row
+          lcd.print("    Error");       //Print text to the lcd
+          delay(2000);
+          received = 1;                 //We have received a valid command
+	  sendChar(104);                //Send them an error message
+          receivecoord();}              //Return to receiving coordinates		
+	} 
+      break;                            //Break out of function
+  }  
+}
+
+void sendChar(char data) {              //Character sending function
+	Serial3.write(HEADER);          //Send the header
+	Serial3.write(data);}           //Send the assigned character
+
+void player1(){                         //Player1 function
+  lcd.clear();                          //Clear the lcd
+  lcd.setCursor(0, 0);                  //Set cursor to the beginning
+  lcd.print("    PLAYER 1");            //Print text to the lcd
+  delay(2000);  
+  lcd.clear();                          //Clear the lcd
+  sendcoord();}                         //Run the send coordinate function
+
+void player2(){                         //Player2 function
+  lcd.clear();                          //Clear the lcd
+  lcd.setCursor(0, 0);                  //Set cursor to the beginning
+  lcd.print("    PLAYER 2");            //Print text to the lcd
+  delay(2000);  
+  lcd.clear();                          //Clear the lcd
+  receivecoord();}                      //Run the receive coordinate function
+  
+void sendcoord(){                       //Send coordinate function
+  lcd.clear();                          //Clear the lcd
+  lcd.setCursor(0, 0);                  //Set cursor to the beginning
+  lcd.print("Input target:");           //Print text to the lcd
+  lcd.setCursor(0, 1);                  //Set Cursor to the beginning of the second row
+  coord1 = keypad.waitForKey();         //Set the first variable to the keypad input
+      lcd.print(coord1);                //Print the keypad input to the lcd
+  coord2 = keypad.waitForKey();         //Set the second variable to the keypad input
+      lcd.print(coord2);                //Print the keypad input to the lcd
+  finalcoord = (coord1 * 10) + coord2;  //Combine the first 2 variables into 1 integer
+  Xaxis.write(Xpos[finalcoord]);        //Move the laser to the targeted coordinate
+  Yaxis.write(Ypos[finalcoord]);
+  digitalWrite(45, HIGH);               //Turn the button light on
+  buttonState = digitalRead(buttonPin); //Set button state variable to the position of the button
+  while (buttonState == HIGH){          //Wait for the button to be pressed
+    delay(10);                      
+    buttonState = digitalRead(buttonPin);//Return the position of the button
+  }
+  Serial3.write(HEADER);                //Send the header
+  Serial3.write(finalcoord);            //Send the targeted coordinate
+  digitalWrite(45, LOW);                //Turn off the button light
+  received = 0;                         //Set received variable to 0
+  while (received == 0){                    //While nothing has been received
+    if (Serial3.available() == MAX_BYTES) { //If there are 2 bytes in the buffer
+         char head = Serial3.read();        //Read the header
+         x = Serial3.read();                //Read the character
+       if (head == HEADER) {                //If the header is correct
+           phrase(x);}                      //Run the phrase function
+       }   
+     while (Serial3.available() > 0)        //Read the buffer until empty
+         Serial3.read();
+         delay(20);
+  }  
+  if (hits == 17){                          //If the maximum amount of hits
+     lcd.clear();                           //Clear the lcd
+     lcd.setCursor(0, 0);                   //Set the lcd cursor to beginning
+     lcd.print("      :) ");                //Print a winning text to the lcd
+     delay(999999);}                        //Keep it printed for a long time until reset
+     
+  receivecoord();}                          //Run the receive coordinate function
+
+void receivecoord(){                        //Receive coordinate function
+  lcd.clear();                              //Clear the lcd
+  lcd.setCursor(0, 0);                      //Set lcd Cursor to the beginning
+  lcd.print("Awaiting Coord:");             //Print text to the lcd
+  received = 0;                             //Set receieved variable to 0
+  while (received == 0){                    //While nothing has been received
+    if (Serial3.available() == MAX_BYTES) { //If there are 2 bytes in the buffer
+         char head = Serial3.read();        //Read the header
+         x = Serial3.read();                //Read the character 
+       if (head == HEADER) {                //If the header is correct
+           phrase(x);}                      //Run the phrase function
+       }   
+     while (Serial3.available() > 0)        //Read the buffer until empty
+         Serial3.read();
+         delay(20);
+  }
+  Xaxis.write(Xpos[checkcoord]);            //Set the laser to the received coordinate
+  Yaxis.write(Ypos[checkcoord]);    
+  if (ship[checkcoord] == 1){               //If there is a ship in the received coodinate
+    delay(100);
+    Serial3.write(HEADER);                  //Send the header
+    Serial3.write(101);                     //Send the ASCII character 103 (Hit)
+    lcd.setCursor(0, 1);                    //Set the lcd cursor to the start of the second row
+    lcd.print("      Hit");                 //Print text to the lcd
+    delay(2000);
+    ship[checkcoord] = 0;                   //Remove the ship coordinate from the array
+    losses++;}                              //Increase the amount of ship coordinates you have lost
+    
+  else if (ship[checkcoord] == 0){          //If there is not ship in the received coordinate
+    delay(100);~
+    Serial3.write(HEADER);                  //Send the header
+    Serial3.write(100);                     //Send the ASCII character 100 (Miss)
+    lcd.setCursor(0, 1);                    //Set the lcd cursor to the start of the second row
+    lcd.print("      Miss");                //Print text to the lcd
+    delay(2000);}    
+    
+   if (losses == 17){                       //If you have lost all of your ship coordinates
+     lcd.clear();                           //Clear the lcd
+     lcd.setCursor(0, 0);                   //Set the lcd cursor to the beginning
+     lcd.print("      :( ");                //Print a losing text to the lcd
+     delay(999999);}                        //Keep it printed for a long time until reset
+  sendcoord();}                             //Run the send coordinate function
